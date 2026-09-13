@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDown, ArrowUp, Activity, Globe, Wifi } from 'lucide-react';
+import { ArrowDown, ArrowUp, Activity, Globe, Wifi, Sliders } from 'lucide-react';
 import { SpeedUnit } from '../types';
 
 interface MetricCardsProps {
@@ -19,6 +19,7 @@ interface MetricCardsProps {
   formatSpeed: (mbps: number) => string;
   isDark: boolean;
   onOpenVerification?: () => void;
+  onOpenOptimizationTips?: () => void;
   isRealVerified?: boolean;
 }
 
@@ -37,6 +38,7 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
   formatSpeed,
   isDark,
   onOpenVerification,
+  onOpenOptimizationTips,
 }) => {
   const cardBg = isDark
     ? 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700'
@@ -68,7 +70,7 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
           <div className="flex items-baseline space-x-2">
             <span
               id="downloadValue"
-              className={`text-3xl sm:text-4xl font-extrabold font-mono tracking-tight ${
+              className={`text-3xl sm:text-4xl font-black font-display tracking-tight tabular-nums ${
                 downloadSpeed !== null
                   ? isDark
                     ? 'text-cyan-400'
@@ -106,7 +108,7 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
           <div className="flex items-baseline space-x-2">
             <span
               id="uploadValue"
-              className={`text-3xl sm:text-4xl font-extrabold font-mono tracking-tight ${
+              className={`text-3xl sm:text-4xl font-black font-display tracking-tight tabular-nums ${
                 uploadSpeed !== null
                   ? isDark
                     ? 'text-pink-400'
@@ -142,7 +144,7 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
           <div className="flex items-baseline space-x-2">
             <span
               id="pingValue"
-              className={`text-3xl sm:text-4xl font-extrabold font-mono tracking-tight ${
+              className={`text-3xl sm:text-4xl font-black font-display tracking-tight tabular-nums ${
                 ping !== null
                   ? isDark
                     ? 'text-indigo-400'
@@ -191,21 +193,42 @@ export const MetricCards: React.FC<MetricCardsProps> = ({
           {bufferbloatMs > 0 && (
             <>
               <span className="text-slate-500">•</span>
-              <span className="text-[11px] font-mono">
-                Bufferbloat: <span className="text-emerald-400 font-medium">+{bufferbloatMs}ms</span>
-              </span>
+              <button
+                onClick={onOpenOptimizationTips}
+                title="Click to view network optimization tips"
+                className="text-[11px] font-mono hover:underline cursor-pointer flex items-center space-x-1 text-slate-300"
+              >
+                <span>Bufferbloat:</span>
+                <span className={`font-semibold ${bufferbloatMs <= 15 ? 'text-emerald-400' : bufferbloatMs <= 35 ? 'text-amber-400' : 'text-rose-400'}`}>
+                  +{bufferbloatMs}ms
+                </span>
+                <span className="text-[10px] text-indigo-400 font-sans">(Tips)</span>
+              </button>
             </>
           )}
         </div>
 
-        {onOpenVerification && (
-          <button
-            onClick={onOpenVerification}
-            className="text-[11px] font-mono text-indigo-400 hover:text-indigo-300 underline cursor-pointer ml-auto"
-          >
-            Connection Details
-          </button>
-        )}
+        <div className="flex items-center space-x-3 ml-auto">
+          {onOpenOptimizationTips && (
+            <button
+              id="openOptimizationTipsBtn"
+              onClick={onOpenOptimizationTips}
+              className="text-[11px] font-mono text-cyan-400 hover:text-cyan-300 underline cursor-pointer flex items-center space-x-1"
+            >
+              <Sliders className="w-3 h-3 text-cyan-400" />
+              <span>Optimization Tips</span>
+            </button>
+          )}
+
+          {onOpenVerification && (
+            <button
+              onClick={onOpenVerification}
+              className="text-[11px] font-mono text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
+            >
+              Connection Details
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

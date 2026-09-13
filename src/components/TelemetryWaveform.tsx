@@ -12,6 +12,7 @@ interface TelemetryWaveformProps {
   bufferbloatLatency: string;
   streamsCount: number;
   isDark: boolean;
+  onOpenOptimizationTips?: () => void;
 }
 
 export const TelemetryWaveform: React.FC<TelemetryWaveformProps> = ({
@@ -25,6 +26,7 @@ export const TelemetryWaveform: React.FC<TelemetryWaveformProps> = ({
   bufferbloatLatency,
   streamsCount,
   isDark,
+  onOpenOptimizationTips,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dimensionsRef = useRef<{ width: number; height: number }>({ width: 300, height: 180 });
@@ -259,11 +261,18 @@ export const TelemetryWaveform: React.FC<TelemetryWaveformProps> = ({
           </div>
         </div>
         <div
-          className={`p-1.5 sm:p-2 rounded-xl border ${
-            isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+          onClick={onOpenOptimizationTips}
+          title="Click to view Bufferbloat & Latency Optimization Tips"
+          className={`p-1.5 sm:p-2 rounded-xl border transition cursor-pointer group ${
+            isDark
+              ? 'bg-slate-900/60 border-slate-800 hover:border-cyan-500/50 hover:bg-slate-900'
+              : 'bg-slate-50 border-slate-200 hover:border-cyan-400 hover:bg-slate-100'
           }`}
         >
-          <div className="text-[9px] uppercase text-slate-400">Bufferbloat</div>
+          <div className="text-[9px] uppercase text-slate-400 flex items-center justify-center space-x-1">
+            <span>Bufferbloat</span>
+            <span className="text-[8px] text-cyan-400 group-hover:underline font-sans">(Tips)</span>
+          </div>
           <div className="text-[11px] sm:text-xs font-bold text-cyan-400 truncate">
             {bufferbloatLatency}
           </div>

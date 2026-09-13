@@ -10,6 +10,7 @@ interface ConnectionVerificationModalProps {
   bufferbloatMs: number;
   isDark: boolean;
   onRefreshIp: () => void;
+  onOpenOptimizationTips?: () => void;
 }
 
 export const ConnectionVerificationModal: React.FC<ConnectionVerificationModalProps> = ({
@@ -20,6 +21,7 @@ export const ConnectionVerificationModal: React.FC<ConnectionVerificationModalPr
   bufferbloatMs,
   isDark,
   onRefreshIp,
+  onOpenOptimizationTips,
 }) => {
   if (!isOpen) return null;
 
@@ -168,10 +170,21 @@ export const ConnectionVerificationModal: React.FC<ConnectionVerificationModalPr
                 </div>
               </div>
             </div>
-            <div className="text-right">
+            <div className="flex items-center space-x-2">
               <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 font-bold font-mono border border-emerald-500/30">
                 +{bufferbloatMs}ms ({bufferbloatGrade})
               </span>
+              {onOpenOptimizationTips && (
+                <button
+                  onClick={() => {
+                    onClose();
+                    onOpenOptimizationTips();
+                  }}
+                  className="text-[10px] font-mono text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+                >
+                  Tips &rarr;
+                </button>
+              )}
             </div>
           </div>
 

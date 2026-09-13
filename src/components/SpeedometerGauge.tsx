@@ -160,7 +160,7 @@ export const SpeedometerGauge: React.FC<SpeedometerGaugeProps> = ({
           <div className="flex items-baseline justify-center">
             <span
               id="currentGaugeSpeed"
-              className={`text-5xl sm:text-6xl font-black font-mono tracking-tight ${
+              className={`text-5xl sm:text-6xl font-black font-display tracking-tight tabular-nums ${
                 isDark ? 'text-white' : 'text-slate-900'
               }`}
             >
@@ -170,7 +170,7 @@ export const SpeedometerGauge: React.FC<SpeedometerGaugeProps> = ({
 
           <span
             id="gaugeUnitText"
-            className="text-xs sm:text-sm font-bold uppercase tracking-widest text-slate-400 mt-0.5"
+            className="text-xs sm:text-sm font-bold uppercase tracking-widest text-slate-400 mt-0.5 font-display"
           >
             {unit}
           </span>

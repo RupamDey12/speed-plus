@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Zap, ChevronDown, Sun, Moon, Server, Check } from 'lucide-react';
+import { Zap, ChevronDown, Sun, Moon, Server, Check, Sliders } from 'lucide-react';
 import { ServerNode, SpeedUnit } from '../types';
 
 interface NavbarProps {
@@ -11,6 +11,7 @@ interface NavbarProps {
   isDark: boolean;
   onToggleTheme: () => void;
   apiLossPercent: number;
+  onOpenOptimizationTips?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -21,6 +22,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectUnit,
   isDark,
   onToggleTheme,
+  onOpenOptimizationTips,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -52,7 +54,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Zap className="w-4 h-4 fill-white" />
           </div>
           <span
-            className={`text-lg font-bold tracking-tight ${
+            className={`text-lg font-extrabold font-display tracking-tight ${
               isDark ? 'text-white' : 'text-slate-900'
             }`}
           >
@@ -215,6 +217,23 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             {unit}
           </button>
+
+          {/* Network Optimization Tips Modal Button */}
+          {onOpenOptimizationTips && (
+            <button
+              id="navOptimizationTipsBtn"
+              onClick={onOpenOptimizationTips}
+              title="Network Optimization Tips"
+              className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 min-h-[38px] rounded-lg border text-xs font-medium transition cursor-pointer ${
+                isDark
+                  ? 'bg-slate-900/90 hover:bg-slate-800 text-cyan-300 border-slate-800 hover:border-cyan-500/40'
+                  : 'bg-slate-100 hover:bg-slate-200/80 text-cyan-700 border-slate-300'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span className="hidden sm:inline">Tips</span>
+            </button>
+          )}
 
           {/* Dark / Light Mode Toggle Button */}
           <button
