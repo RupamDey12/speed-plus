@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { BenchmarkStage, ServerNode, SpeedUnit, WaveformTab } from '../types';
+import { BenchmarkStage, BenchmarkTestMode, ServerNode, SpeedUnit, WaveformTab } from '../types';
 import { formatSpeed, classifySpeed } from '../utils/formatters';
 import { runPingBenchmark, runDownloadBenchmark, runUploadBenchmark } from '../services/telemetryEngine';
 import { saveBenchmarkResult } from '../services/api';
@@ -20,6 +20,7 @@ export function useSpeedTest({
   onBenchmarkCompleted,
 }: UseSpeedTestProps) {
   const [stage, setStage] = useState<BenchmarkStage>('idle');
+  const [testMode, setTestMode] = useState<BenchmarkTestMode>('full');
   const [isTesting, setIsTesting] = useState(false);
   const [liveSpeed, setLiveSpeed] = useState<number>(0);
   const [progressPct, setProgressPct] = useState<number>(0);
@@ -114,188 +115,251 @@ export function useSpeedTest({
   }, [isTesting, selectedServer, appendWaveformSample]);
 
   // Master Test Routine
-  const startSpeedTest = useCallback(async () => {
-    if (isTesting) return;
-    cancelFlagRef.current = false;
-    setIsTesting(true);
+  const startSpeedTest = useCallback(
+    async (overrideMode?: BenchmarkTestMode) => {
+      if (isTesting) return;
+      cancelFlagRef.current = false;
+      setIsTesting(true);
 
-    try {
-      setLiveSpeed(0);
+      const mode = overrideMode || testMode;
 
-      // Edge node auto-calibration: resolve lowest-latency edge
-      let activeTargetServer = selectedServer;
-      if (selectedServer.id === 'cloudflare-auto') {
-        setStatusText('Calibrating Nearest Edge PoP (Multi-Route Latency Pre-test)...');
-        try {
-          const edgeCandidates = servers.filter((s) => s.id !== 'cloudflare-auto');
-          const probePromises = edgeCandidates.map(async (srv) => {
-            const pUrl = srv.pingUrl || '/api/ping';
-            const sep = pUrl.includes('?') ? '&' : '?';
-            const t0 = performance.now();
-            try {
-              const res = await fetch(`${pUrl}${sep}_probe=${Date.now()}`, { cache: 'no-store' });
-              if (res.ok) return { srv, rtt: performance.now() - t0 };
-            } catch {
-              // fallback
+      try {
+        setLiveSpeed(0);
+
+        // Edge node auto-calibration: resolve lowest-latency edge
+        let activeTargetServer = selectedServer;
+        if (selectedServer.id === 'cloudflare-auto') {
+          setStatusText('Calibrating Nearest Edge PoP (Multi-Route Latency Pre-test)...');
+          try {
+            const edgeCandidates = servers.filter((s) => s.id !== 'cloudflare-auto');
+            const probePromises = edgeCandidates.map(async (srv) => {
+              const pUrl = srv.pingUrl || '/api/ping';
+              const sep = pUrl.includes('?') ? '&' : '?';
+              const t0 = performance.now();
+              try {
+                const res = await fetch(`${pUrl}${sep}_probe=${Date.now()}`, { cache: 'no-store' });
+                if (res.ok) return { srv, rtt: performance.now() - t0 };
+              } catch {
+                // fallback
+              }
+              return { srv, rtt: 9999 };
+            });
+
+            const cfProbe = (async () => {
+              const t0 = performance.now();
+              try {
+                const res = await fetch(
+                  `https://speed.cloudflare.com/__down?bytes=0&_probe=${Date.now()}`,
+                  { cache: 'no-store' }
+                );
+                if (res.ok) return { srv: selectedServer, rtt: performance.now() - t0 };
+              } catch {
+                // fallback
+              }
+              return { srv: selectedServer, rtt: 9999 };
+            })();
+
+            const results = await Promise.all([...probePromises, cfProbe]);
+            results.sort((a, b) => a.rtt - b.rtt);
+            if (results[0] && results[0].rtt < 8000) {
+              activeTargetServer = results[0].srv;
             }
-            return { srv, rtt: 9999 };
+          } catch {
+            // keep selected
+          }
+        }
+
+        let recordedPing = ping || selectedServer.basePing || 15;
+        let recordedJitter = jitter || 1.2;
+        let recordedLoss = loss || 0;
+        let finalDown = downloadSpeed || 0;
+        let finalUp = uploadSpeed || 0;
+
+        // 1. Latency Probe (run if mode is full, latency-only, or download-only)
+        if (mode === 'full' || mode === 'latency-only' || mode === 'download-only') {
+          setStage('ping');
+          setWaveformTab('jitter');
+          setParticleMultiplier(2);
+          setStatusText('Testing Physical Edge Socket Latency (16 High-Precision Probes)...');
+
+          const pingResult = await runPingBenchmark(activeTargetServer, {
+            onProbe: (currentPing, probeIdx, totalProbes, isWarmup) => {
+              setPing(currentPing);
+              appendWaveformSample(currentPing);
+              setProgressPct((probeIdx / totalProbes) * (mode === 'latency-only' ? 100 : 20));
+              setStageLabel(`Ping: ${currentPing} ms`);
+              setStatusText(
+                isWarmup
+                  ? `TLS/Socket Warmup Probe ${probeIdx}/2: ${currentPing}ms (Calibrating)`
+                  : `Edge RTT Probe ${probeIdx}/${totalProbes}: ${currentPing}ms`
+              );
+            },
+            isCancelled: () => cancelFlagRef.current,
           });
 
-          const cfProbe = (async () => {
-            const t0 = performance.now();
-            try {
-              const res = await fetch(
-                `https://speed.cloudflare.com/__down?bytes=0&_probe=${Date.now()}`,
-                { cache: 'no-store' }
-              );
-              if (res.ok) return { srv: selectedServer, rtt: performance.now() - t0 };
-            } catch {
-              // fallback
-            }
-            return { srv: selectedServer, rtt: 9999 };
-          })();
+          if (cancelFlagRef.current) return;
+          recordedPing = pingResult.ping;
+          recordedJitter = pingResult.jitter;
+          recordedLoss = pingResult.loss;
+          setPing(recordedPing);
+          setJitter(recordedJitter);
+          setLoss(recordedLoss);
 
-          const results = await Promise.all([...probePromises, cfProbe]);
-          results.sort((a, b) => a.rtt - b.rtt);
-          if (results[0] && results[0].rtt < 8000) {
-            activeTargetServer = results[0].srv;
+          if (mode === 'latency-only') {
+            setStage('completed');
+            setParticleMultiplier(1);
+            setProgressPct(100);
+            setStageLabel(`Latency Benchmark: ${recordedPing} ms`);
+            setStatusText(
+              `Edge Socket Latency Verified • Ping: ${recordedPing}ms (Jitter: ${recordedJitter}ms)`
+            );
+            return;
           }
-        } catch {
-          // keep selected
         }
+
+        // 2. Download Phase
+        if (mode === 'full' || mode === 'download-only') {
+          setStage('download');
+          setWaveformTab('down');
+          setParticleMultiplier(4.5);
+          setStatusText('Calibrating Real Wire Download (Multi-Stream Direct Sockets)...');
+
+          let downloadPeakSpeed = 0;
+          const downloadResult = await runDownloadBenchmark(activeTargetServer, recordedPing, {
+            onProgress: (instantSpeed, pct, totalBytes, isSteady) => {
+              downloadPeakSpeed = Math.max(downloadPeakSpeed, instantSpeed);
+              setLiveSpeed(instantSpeed);
+              setDownloadSpeed(instantSpeed);
+              setDownloadTransferredMb(totalBytes / (1024 * 1024));
+              setDownloadPeak(downloadPeakSpeed);
+              appendWaveformSample(instantSpeed);
+              setProgressPct(mode === 'download-only' ? (pct - 20) * 1.8 : pct);
+              setStageLabel(`Download: ${formatSpeed(instantSpeed, unit)} ${unit}`);
+              setStatusText(
+                isSteady
+                  ? `RFC 6349 Steady-State: ${formatSpeed(instantSpeed, unit)} ${unit} (${(
+                      totalBytes /
+                      (1024 * 1024)
+                    ).toFixed(1)} MB)`
+                  : `TCP Slow-Start Ramp: ${formatSpeed(instantSpeed, unit)} ${unit} (Calibrating)`
+              );
+            },
+            isCancelled: () => cancelFlagRef.current,
+          });
+
+          if (cancelFlagRef.current) return;
+          finalDown = downloadResult.speedMbps;
+          setDownloadSpeed(finalDown);
+          setBufferbloatMs(downloadResult.bufferbloatMs);
+          onBytesTransferred?.(downloadResult.transferredBytes, 0);
+
+          if (mode === 'download-only') {
+            setStage('completed');
+            setParticleMultiplier(1);
+            setProgressPct(100);
+            setStageLabel(`Download Complete: ${finalDown} ${unit}`);
+            setStatusText(`Download Benchmark Complete • Sustained: ${finalDown} ${unit}`);
+            setLiveSpeed(finalDown);
+
+            await saveBenchmarkResult({
+              server: activeTargetServer.name,
+              serverNodeName: activeTargetServer.name,
+              connectionType: 'Ethernet',
+              ping: recordedPing,
+              jitter: recordedJitter,
+              download: finalDown,
+              upload: uploadSpeed || 0,
+              loss: recordedLoss,
+              classification: classifySpeed(finalDown),
+            });
+
+            onBenchmarkCompleted?.();
+            return;
+          }
+        }
+
+        // 3. Upload Phase
+        if (mode === 'full' || mode === 'upload-only') {
+          setStage('upload');
+          setWaveformTab('up');
+          setParticleMultiplier(3.8);
+          setStatusText('Testing Real Wire Upload (High-Precision Socket Stream)...');
+
+          let uploadPeakSpeed = 0;
+          const uploadResult = await runUploadBenchmark(activeTargetServer, {
+            onProgress: (instantSpeed, pct, totalBytes, isSteady) => {
+              uploadPeakSpeed = Math.max(uploadPeakSpeed, instantSpeed);
+              setLiveSpeed(instantSpeed);
+              setUploadSpeed(instantSpeed);
+              setUploadTransferredMb(totalBytes / (1024 * 1024));
+              setUploadPeak(uploadPeakSpeed);
+              appendWaveformSample(instantSpeed);
+              setProgressPct(mode === 'upload-only' ? (pct - 65) * 3 : pct);
+              setStageLabel(`Upload: ${formatSpeed(instantSpeed, unit)} ${unit}`);
+              setStatusText(
+                isSteady
+                  ? `RFC 6349 Uplink: ${formatSpeed(instantSpeed, unit)} ${unit} (${(
+                      totalBytes /
+                      (1024 * 1024)
+                    ).toFixed(1)} MB)`
+                  : `Uplink Slow-Start Ramp: ${formatSpeed(instantSpeed, unit)} ${unit} (Calibrating)`
+              );
+            },
+            isCancelled: () => cancelFlagRef.current,
+          });
+
+          if (cancelFlagRef.current) return;
+          finalUp = uploadResult.speedMbps;
+          setUploadSpeed(finalUp);
+          onBytesTransferred?.(0, uploadResult.transferredBytes);
+        }
+
+        // 4. Finalize & Persist
+        setStage('completed');
+        setParticleMultiplier(1);
+        setProgressPct(100);
+        setStageLabel(`Calibrated Benchmark Complete: ${finalDown} ${unit}`);
+        setStatusText(
+          `Direct Socket Benchmark Complete • RFC 6349 Calibrated against ${activeTargetServer.name}`
+        );
+        setLiveSpeed(finalDown);
+
+        await saveBenchmarkResult({
+          server: activeTargetServer.name,
+          serverNodeName: activeTargetServer.name,
+          connectionType: 'Ethernet',
+          ping: recordedPing,
+          jitter: recordedJitter,
+          download: finalDown,
+          upload: finalUp,
+          loss: recordedLoss,
+          classification: classifySpeed(finalDown),
+        });
+
+        onBenchmarkCompleted?.();
+      } catch (err) {
+        console.error('Speed test error:', err);
+        setStatusText('Benchmark interrupted or cancelled');
+      } finally {
+        setIsTesting(false);
       }
-
-      // 1. Ping & Jitter
-      setStage('ping');
-      setWaveformTab('jitter');
-      setParticleMultiplier(2);
-      setStatusText('Testing Physical Edge Socket Latency (16 High-Precision Probes)...');
-
-      const pingResult = await runPingBenchmark(activeTargetServer, {
-        onProbe: (currentPing, probeIdx, totalProbes, isWarmup) => {
-          setPing(currentPing);
-          appendWaveformSample(currentPing);
-          setProgressPct((probeIdx / totalProbes) * 20);
-          setStageLabel(`Ping: ${currentPing} ms`);
-          setStatusText(
-            isWarmup
-              ? `TLS/Socket Warmup Probe ${probeIdx}/2: ${currentPing}ms (Calibrating)`
-              : `Edge RTT Probe ${probeIdx}/${totalProbes}: ${currentPing}ms`
-          );
-        },
-        isCancelled: () => cancelFlagRef.current,
-      });
-
-      if (cancelFlagRef.current) return;
-      setPing(pingResult.ping);
-      setJitter(pingResult.jitter);
-      setLoss(pingResult.loss);
-
-      // 2. Download
-      setStage('download');
-      setWaveformTab('down');
-      setParticleMultiplier(4.5);
-      setStatusText('Calibrating Real Wire Download (Multi-Stream Direct Sockets)...');
-
-      let downloadPeakSpeed = 0;
-      const downloadResult = await runDownloadBenchmark(activeTargetServer, pingResult.ping, {
-        onProgress: (instantSpeed, pct, totalBytes, isSteady) => {
-          downloadPeakSpeed = Math.max(downloadPeakSpeed, instantSpeed);
-          setLiveSpeed(instantSpeed);
-          setDownloadSpeed(instantSpeed);
-          setDownloadTransferredMb(totalBytes / (1024 * 1024));
-          setDownloadPeak(downloadPeakSpeed);
-          appendWaveformSample(instantSpeed);
-          setProgressPct(pct);
-          setStageLabel(`Download: ${formatSpeed(instantSpeed, unit)} ${unit}`);
-          setStatusText(
-            isSteady
-              ? `RFC 6349 Steady-State: ${formatSpeed(instantSpeed, unit)} ${unit} (${(
-                  totalBytes /
-                  (1024 * 1024)
-                ).toFixed(1)} MB)`
-              : `TCP Slow-Start Ramp: ${formatSpeed(instantSpeed, unit)} ${unit} (Calibrating)`
-          );
-        },
-        isCancelled: () => cancelFlagRef.current,
-      });
-
-      if (cancelFlagRef.current) return;
-      setDownloadSpeed(downloadResult.speedMbps);
-      setBufferbloatMs(downloadResult.bufferbloatMs);
-      onBytesTransferred?.(downloadResult.transferredBytes, 0);
-
-      // 3. Upload
-      setStage('upload');
-      setWaveformTab('up');
-      setParticleMultiplier(3.8);
-      setStatusText('Testing Real Wire Upload (High-Precision Socket Stream)...');
-
-      let uploadPeakSpeed = 0;
-      const uploadResult = await runUploadBenchmark(activeTargetServer, {
-        onProgress: (instantSpeed, pct, totalBytes, isSteady) => {
-          uploadPeakSpeed = Math.max(uploadPeakSpeed, instantSpeed);
-          setLiveSpeed(instantSpeed);
-          setUploadSpeed(instantSpeed);
-          setUploadTransferredMb(totalBytes / (1024 * 1024));
-          setUploadPeak(uploadPeakSpeed);
-          appendWaveformSample(instantSpeed);
-          setProgressPct(pct);
-          setStageLabel(`Upload: ${formatSpeed(instantSpeed, unit)} ${unit}`);
-          setStatusText(
-            isSteady
-              ? `RFC 6349 Uplink: ${formatSpeed(instantSpeed, unit)} ${unit} (${(
-                  totalBytes /
-                  (1024 * 1024)
-                ).toFixed(1)} MB)`
-              : `Uplink Slow-Start Ramp: ${formatSpeed(instantSpeed, unit)} ${unit} (Calibrating)`
-          );
-        },
-        isCancelled: () => cancelFlagRef.current,
-      });
-
-      if (cancelFlagRef.current) return;
-      setUploadSpeed(uploadResult.speedMbps);
-      onBytesTransferred?.(0, uploadResult.transferredBytes);
-
-      // 4. Finalize & Persist
-      setStage('completed');
-      setParticleMultiplier(1);
-      setProgressPct(100);
-      setStageLabel(`Calibrated Benchmark Complete: ${downloadResult.speedMbps} ${unit}`);
-      setStatusText(
-        `Direct Socket Benchmark Complete • RFC 6349 Calibrated against ${activeTargetServer.name}`
-      );
-      setLiveSpeed(downloadResult.speedMbps);
-
-      await saveBenchmarkResult({
-        server: activeTargetServer.name,
-        serverNodeName: activeTargetServer.name,
-        connectionType: 'Ethernet',
-        ping: pingResult.ping,
-        jitter: pingResult.jitter,
-        download: downloadResult.speedMbps,
-        upload: uploadResult.speedMbps,
-        loss: pingResult.loss,
-        classification: classifySpeed(downloadResult.speedMbps),
-      });
-
-      onBenchmarkCompleted?.();
-    } catch (err) {
-      console.error('Speed test error:', err);
-      setStatusText('Benchmark interrupted or cancelled');
-    } finally {
-      setIsTesting(false);
-    }
-  }, [
-    isTesting,
-    selectedServer,
-    servers,
-    unit,
-    appendWaveformSample,
-    onBytesTransferred,
-    onBenchmarkCompleted,
-  ]);
+    },
+    [
+      isTesting,
+      testMode,
+      selectedServer,
+      servers,
+      unit,
+      ping,
+      jitter,
+      loss,
+      downloadSpeed,
+      uploadSpeed,
+      appendWaveformSample,
+      onBytesTransferred,
+      onBenchmarkCompleted,
+    ]
+  );
 
   // Spacebar shortcut
   useEffect(() => {
@@ -316,6 +380,8 @@ export function useSpeedTest({
 
   return {
     stage,
+    testMode,
+    setTestMode,
     isTesting,
     liveSpeed,
     progressPct,

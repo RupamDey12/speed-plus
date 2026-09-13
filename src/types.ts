@@ -55,3 +55,14 @@ export interface TelemetryStats {
   bestLatency: number;
   totalBenchmarks: number;
 }
+
+export interface IspBenchmarkComparison {
+  tier: string;
+  name: string;
+  avgDown: number;
+  avgUp: number;
+  avgPing: number;
+  color: string;
+}
+
+export type BenchmarkTestMode = 'full' | 'download-only' | 'upload-only' | 'latency-only';

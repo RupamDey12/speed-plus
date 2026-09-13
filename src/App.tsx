@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ChevronDown, BarChart3 } from 'lucide-react';
+import { ChevronDown, BarChart3, Award, Sparkles } from 'lucide-react';
 
 // Components
 import { Navbar } from './components/Navbar';
@@ -12,6 +12,12 @@ import { ParticleBackground } from './components/ParticleBackground';
 import { AppFooter } from './components/AppFooter';
 import { ConnectionVerificationModal } from './components/ConnectionVerificationModal';
 import { NetworkOptimizationModal } from './components/NetworkOptimizationModal';
+
+// Newly added advanced features
+import { TestModeSelector } from './components/TestModeSelector';
+import { RealtimeCapabilityAssessment } from './components/RealtimeCapabilityAssessment';
+import { IspBenchmarkComparisonCard } from './components/IspBenchmarkComparisonCard';
+import { SpeedTestCertificate } from './components/SpeedTestCertificate';
 
 // Static Data & Utilities
 import { INITIAL_SERVERS } from './data/servers';
@@ -56,6 +62,8 @@ export default function App() {
   // 2. Speed Test Engine Hook
   const {
     stage,
+    testMode,
+    setTestMode,
     isTesting,
     liveSpeed,
     progressPct,
@@ -131,6 +139,14 @@ export default function App() {
 
         {/* Main Application Container */}
         <main className="flex-1 max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 w-full space-y-6">
+          {/* Top Test Mode Switcher: Full Suite vs Download-Only vs Upload-Only vs Latency-Only */}
+          <TestModeSelector
+            currentMode={testMode}
+            onSelectMode={setTestMode}
+            isTesting={isTesting}
+            isDark={isDark}
+          />
+
           {/* 1. Center Speedometer Gauge & Controls */}
           <SpeedometerGauge
             stage={stage}
@@ -141,7 +157,7 @@ export default function App() {
             unit={unit}
             formatSpeed={formatSpeedWithUnit}
             isTesting={isTesting}
-            onStartTest={startSpeedTest}
+            onStartTest={() => startSpeedTest()}
             onQuickPing={quickPing}
             onReset={reset}
             isDark={isDark}
@@ -169,7 +185,47 @@ export default function App() {
             isRealVerified={true}
           />
 
-          {/* 3. Advanced Telemetry & History Collapse Switch */}
+          {/* 3. Completed State: Verified Certificate of Performance */}
+          {stage === 'completed' && (
+            <SpeedTestCertificate
+              downloadSpeed={downloadSpeed}
+              uploadSpeed={uploadSpeed}
+              ping={ping}
+              jitter={jitter}
+              bufferbloatMs={bufferbloatMs}
+              packetLoss={loss}
+              serverName={selectedServer.name}
+              ispName={networkInfo.isp}
+              clientIp={networkInfo.ip}
+              unit={unit}
+              formatSpeed={formatSpeedWithUnit}
+              isDark={isDark}
+            />
+          )}
+
+          {/* 4. Real-World Capability Assessment (Gaming, 4K HDR, Conferencing, Live Streaming) */}
+          <RealtimeCapabilityAssessment
+            downloadSpeed={downloadSpeed}
+            uploadSpeed={uploadSpeed}
+            ping={ping}
+            jitter={jitter}
+            bufferbloatMs={bufferbloatMs}
+            packetLoss={loss}
+            isDark={isDark}
+          />
+
+          {/* 5. Global ISP Infrastructure Benchmark & Speed Percentile */}
+          <IspBenchmarkComparisonCard
+            currentDownload={downloadSpeed}
+            currentUpload={uploadSpeed}
+            currentPing={ping}
+            currentIsp={networkInfo.isp}
+            unit={unit}
+            formatSpeed={formatSpeedWithUnit}
+            isDark={isDark}
+          />
+
+          {/* 6. Advanced Telemetry & History Collapse Switch */}
           <div className="flex justify-center pt-2">
             <button
               onClick={() => setShowAdvanced((prev) => !prev)}
@@ -193,7 +249,7 @@ export default function App() {
             </button>
           </div>
 
-          {/* 4. Collapsible Advanced Telemetry Section */}
+          {/* 7. Collapsible Advanced Telemetry Section */}
           {showAdvanced && (
             <div className="space-y-6 pt-2 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
@@ -263,7 +319,7 @@ export default function App() {
         downloadSpeed={downloadSpeed}
         uploadSpeed={uploadSpeed}
         isDark={isDark}
-        onRetest={startSpeedTest}
+        onRetest={() => startSpeedTest()}
       />
     </div>
   );
